@@ -13,28 +13,44 @@ Full numbers: [reports/numbers.md](reports/numbers.md).
 
 ## Setup
 
-Needs [uv](https://docs.astral.sh/uv/) and ~4 GB of free disk.
+Works on macOS and Windows. Needs [uv](https://docs.astral.sh/uv/) and ~4 GB of free disk.
+Install uv with `brew install uv` (macOS) or `winget install astral-sh.uv` (Windows), then:
 
 ```bash
-make setup   # .venv with Python 3.11 + all deps
-make test
+uv sync           # .venv with Python 3.11 + all deps
+uv run poe test
 ```
 
-No uv: `python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt -e .`
+No uv: make a Python 3.11 venv and `pip install -r requirements.txt -e .` with its pip
+(`.venv/bin/pip` on macOS, `.venv\Scripts\pip` on Windows).
 
-Kaggle token (for the slang notebook): Kaggle → Settings → API → Create New Token, then
+Kaggle token (for the slang notebook): Kaggle → Settings → API → Create New Token, then move `kaggle.json`
+into `.kaggle` in your home folder:
 
 ```bash
-mkdir -p ~/.kaggle && mv ~/Downloads/kaggle.json ~/.kaggle/ && chmod 600 ~/.kaggle/kaggle.json
+mkdir -p ~/.kaggle && mv ~/Downloads/kaggle.json ~/.kaggle/ && chmod 600 ~/.kaggle/kaggle.json   # macOS
+mkdir $HOME\.kaggle; mv $HOME\Downloads\kaggle.json $HOME\.kaggle\                                # Windows (PowerShell)
+```
+
+**Windows, "An Application Control policy has blocked this file":** Smart App Control is blocking the
+unsigned Python uv downloads. Use python.org's signed one instead, then restart the terminal, delete
+`.venv` and run `uv sync` again:
+
+```powershell
+winget install Python.Python.3.11
+[Environment]::SetEnvironmentVariable('UV_PYTHON_PREFERENCE', 'only-system', 'User')
 ```
 
 ## Run
 
 ```bash
-make data       # SF places + reviews, Urban Dictionary, Wiktionary slang (~1 h, mostly streaming)
-make stats      # notebooks 00-03, writes reports/numbers.md
-make features   # notebook 04 (~1 GB of models on first run)
+uv run poe data       # SF places + reviews, Urban Dictionary, Wiktionary slang (~1 h, mostly streaming)
+uv run poe stats      # notebooks 00-03, writes reports/numbers.md
+uv run poe features   # notebook 04 (~1 GB of models on first run)
 ```
+
+`stats` and `features` run `data` first. `data` skips anything already downloaded, and resumes
+the Wiktionary download if it stalls. To rebuild one step: `uv run python -m vibecheck.filter_sf places` (or `reviews`).
 
 Or `uv run jupyter lab` and step through the notebooks.
 

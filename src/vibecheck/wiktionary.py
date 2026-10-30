@@ -2,15 +2,15 @@
 
     uv run python -m vibecheck.wiktionary
 
-Reads the 534 MB file from data/raw (`make data` downloads it with resume, since the server
-stalls), or streams it from the URL. Saves data/processed/wiktionary_slang.parquet.
+Downloads the 534 MB file to data/raw (resuming when the server stalls) and saves
+data/processed/wiktionary_slang.parquet. Skips both if they already exist.
 """
 
 from collections.abc import Iterable
 
 import pandas as pd
 
-from vibecheck.filter_sf import PROCESSED_DIR, RAW_DIR, ROOT, iter_json_lines
+from vibecheck.filter_sf import PROCESSED_DIR, RAW_DIR, ROOT, download, iter_json_lines
 
 WIKTIONARY_URL = "https://kaikki.org/dictionary/English/kaikki.org-dictionary-English.jsonl.gz"
 WIKTIONARY_PATH = RAW_DIR / "kaikki-English.jsonl.gz"
@@ -46,6 +46,7 @@ def build_wiktionary_slang() -> pd.DataFrame:
     """Read Wiktionary line by line, keep slang senses, and save wiktionary_slang.parquet."""
     source = WIKTIONARY_PATH if WIKTIONARY_PATH.exists() else WIKTIONARY_URL
     slang = select_slang(iter_json_lines(source))
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     slang.to_parquet(WIKTIONARY_OUT, index=False)
     n_terms = slang["term"].nunique()
     print(f"Saved {len(slang):,} slang senses for {n_terms:,} terms to {WIKTIONARY_OUT.relative_to(ROOT)}")
@@ -53,4 +54,8 @@ def build_wiktionary_slang() -> pd.DataFrame:
 
 
 if __name__ == "__main__":
-    build_wiktionary_slang()
+    if WIKTIONARY_OUT.exists():
+        print(f"{WIKTIONARY_OUT.relative_to(ROOT)} already exists")
+    else:
+        download(WIKTIONARY_URL, WIKTIONARY_PATH)
+        build_wiktionary_slang()

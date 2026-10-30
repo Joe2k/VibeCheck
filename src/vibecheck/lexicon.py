@@ -1,6 +1,10 @@
-"""Word lists for the vibe and slang stats, and Urban Dictionary lookups."""
+"""Word lists for the vibe and slang stats, and Urban Dictionary lookups.
+
+uv run python -m vibecheck.lexicon    # download the Urban Dictionary dump (needs a Kaggle token)
+"""
 
 import re
+import subprocess
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -9,6 +13,7 @@ import pandas as pd
 from vibecheck.filter_sf import RAW_DIR
 
 UD_CSV = RAW_DIR / "urbandict-word-defs.csv"
+UD_DATASET = "therohk/urban-dictionary-words-dataset"
 
 # Plain words reviewers use for atmosphere.
 VIBE_WORDS = [
@@ -88,3 +93,15 @@ def best_definitions(definitions: pd.DataFrame, terms: Iterable[str]) -> pd.Seri
     defs = definitions.assign(term=definitions["word"].str.lower().str.strip())
     best = defs.sort_values("up_votes", ascending=False).drop_duplicates("term").set_index("term")
     return best["definition"].str.replace(";;", " ").reindex(list(terms))
+
+
+def download_urban_dictionary() -> None:
+    """Download and unzip the Urban Dictionary dump into data/raw. Skips it if the CSV exists."""
+    if UD_CSV.exists():
+        print(f"{UD_CSV.name} already downloaded")
+        return
+    subprocess.run(["kaggle", "datasets", "download", UD_DATASET, "-p", str(RAW_DIR), "--unzip"], check=True)
+
+
+if __name__ == "__main__":
+    download_urban_dictionary()

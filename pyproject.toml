@@ -33,9 +33,21 @@ en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/dow
 dev = [
     "jupyter>=1.1.1",
     "nbconvert>=7.17.2",
+    "poethepoet>=0.29.0",
     "pytest>=9.2.0",
     "ruff>=0.17.3",
 ]
+
+# Same commands on macOS and Windows: `uv run poe <task>` (`uv run poe` lists them).
+[tool.poe.tasks]
+data = { sequence = ["_places_reviews", "_urban_dictionary", "_wiktionary"], help = "SF places + reviews, Urban Dictionary, Wiktionary slang (~1 h, mostly streaming). Skips what exists." }
+stats = { cmd = "jupyter nbconvert --to notebook --execute --inplace --ExecutePreprocessor.timeout=-1 notebooks/00_build_data.ipynb notebooks/01_sf_stats.ipynb notebooks/02_slang.ipynb notebooks/03_tag_queries.ipynb", deps = ["data"], help = "Notebooks 00-03; writes reports/numbers.md" }
+features = { cmd = "jupyter nbconvert --to notebook --execute --inplace --ExecutePreprocessor.timeout=-1 notebooks/04_features.ipynb", deps = ["data"], help = "Notebook 04: feature prototype on 3 places" }
+test = { cmd = "pytest -q", help = "Unit tests" }
+lint = { sequence = ["ruff check src tests notebooks", "ruff format --check src tests"], default_item_type = "cmd", help = "Ruff lint + format check" }
+_places_reviews = "python -m vibecheck.filter_sf"
+_urban_dictionary = "python -m vibecheck.lexicon"
+_wiktionary = "python -m vibecheck.wiktionary"
 
 [tool.ruff]
 line-length = 120
