@@ -59,8 +59,9 @@ Or open the notebooks with `uv run jupyter lab` and run them cell by cell.
 
 Filtering rules (all tunable at the top of `src/vibecheck/filter_sf.py`):
 
-- **San Francisco**: address contains "San Francisco, CA", or the coordinates are inside
-  lat 37.70-37.83 / lon -122.52 to -122.35 and the address doesn't name another city.
+- **San Francisco**: coordinates inside lat 37.70-37.83 / lon -122.52 to -122.35, and the address
+  says "San Francisco, CA" or names no other city (drops the Daly City edge of the box). An address
+  match alone isn't enough: it lets in South San Francisco and SFO airport.
 - **Cafes, restaurants, bars**: whole-word keyword match on Google's categories.
 - **Reviews**: non-empty text, at most the 50 most recent per place. For Google-translated
   reviews, only the English part is kept.

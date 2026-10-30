@@ -33,10 +33,10 @@ REVIEWS_PATH = RAW_DIR / "review-California.json.gz"  # optional local copy
 PLACES_OUT = PROCESSED_DIR / "sf_places.parquet"
 REVIEWS_OUT = PROCESSED_DIR / "sf_reviews.parquet"
 
-SF_ADDRESS = "San Francisco, CA"
 SF_LAT = (37.70, 37.83)
 SF_LON = (-122.52, -122.35)
 MAX_REVIEWS_PER_PLACE = 50
+ATMOSPHERE_ALIASES = {"Cosy": "Cozy", "Upmarket": "Upscale"}
 
 # --- Tune these. Matched as whole words against each lowercased Google category. ---
 # A place's group comes from its first matching category, checked in this order.
@@ -69,6 +69,7 @@ def _word_pattern(words: list[str]) -> re.Pattern:
 GROUP_PATTERNS = {group: _word_pattern(words) for group, words in CATEGORY_KEYWORDS.items()}
 EXCLUDE_PATTERN = _word_pattern(EXCLUDE_KEYWORDS)
 OTHER_CITY_PATTERN = re.compile(r", [^,]+, CA \d{5}")  # "..., Daly City, CA 94014"
+SF_ADDRESS_PATTERN = re.compile(r"(?:^|, )San Francisco, CA")  # not "South San Francisco, CA"
 
 
 # --- I/O ---
@@ -118,18 +119,20 @@ def iter_json_lines(source: str | Path) -> Iterator[dict]:
 
 
 def is_in_sf(place: dict) -> bool:
-    """True if the address says San Francisco, or the coordinates fall inside the SF box.
+    """True if the place is inside the SF box and its address says SF or names no other city.
 
-    The box also covers the edge of Daly City, so a box match only counts when the address
-    doesn't name another city (it catches SF addresses written in other formats).
+    The box is the main rule: an address match alone lets in "South San Francisco, CA" and SFO
+    airport ("San Francisco, CA 94128"), both south of the city. The address check stops the box
+    from pulling in the edge of Daly City, while keeping SF addresses written in other formats.
+    Places without coordinates fall back to the address.
     """
     address = place.get("address") or ""
-    if SF_ADDRESS in address:
-        return True
-    if OTHER_CITY_PATTERN.search(address):
-        return False
+    says_sf = SF_ADDRESS_PATTERN.search(address) is not None
     lat, lon = place.get("latitude"), place.get("longitude")
-    return lat is not None and lon is not None and SF_LAT[0] <= lat <= SF_LAT[1] and SF_LON[0] <= lon <= SF_LON[1]
+    if lat is None or lon is None:
+        return says_sf
+    in_box = SF_LAT[0] <= lat <= SF_LAT[1] and SF_LON[0] <= lon <= SF_LON[1]
+    return in_box and (says_sf or not OTHER_CITY_PATTERN.search(address))
 
 
 def category_group(categories: list[str] | None) -> str | None:
@@ -219,6 +222,20 @@ def select_reviews(records: Iterable[dict], gmap_ids: set[str], k: int = MAX_REV
 
 
 # --- Pipeline ---
+
+
+def load_places() -> pd.DataFrame:
+    """Read sf_places.parquet and parse MISC into a dict column `misc` ({} when missing).
+
+    Google spells some Atmosphere tags two ways; those are merged so "Cosy" places count as "Cozy".
+    """
+    places = pd.read_parquet(PLACES_OUT)
+    places["misc"] = [orjson.loads(s) if isinstance(s, str) else {} for s in places["MISC"]]
+    for misc in places["misc"]:
+        if "Atmosphere" in misc:
+            merged = (ATMOSPHERE_ALIASES.get(tag, tag) for tag in misc["Atmosphere"])
+            misc["Atmosphere"] = list(dict.fromkeys(merged))  # dedupe, keep order
+    return places
 
 
 def build_places() -> pd.DataFrame:

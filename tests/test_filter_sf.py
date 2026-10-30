@@ -16,6 +16,10 @@ def test_is_in_sf():
     assert not is_in_sf(
         {"address": "X, 6192 Mission St, Daly City, CA 94014", "latitude": 37.705, "longitude": -122.46}
     )
+    assert not is_in_sf({"address": "X, 1 Grand Ave, South San Francisco, CA 94080"})
+    assert not is_in_sf(
+        {"address": "X, SFO Terminal 2, San Francisco, CA 94128", "latitude": 37.61, "longitude": -122.38}
+    )
 
 
 def test_clean_text():
