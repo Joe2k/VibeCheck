@@ -24,12 +24,13 @@ def test_gap_table_counts_reviews_and_places():
 
 
 def test_is_slang_term():
-    assert is_slang_term("boujee", up_votes=500)
-    assert not is_slang_term("coffee", up_votes=5000)  # common English
-    assert not is_slang_term("asdfgh", up_votes=5000)  # wordfreq never saw it
-    assert not is_slang_term("low key", up_votes=200)  # phrases need more votes
-    assert is_slang_term("low key", up_votes=2000)
-    assert not is_slang_term("a b c", up_votes=9999)
+    ud = {"boujee", "lowkey", "low key", "first time"}
+    assert is_slang_term("boujee", ud)
+    assert not is_slang_term("coffee", ud)  # common English
+    assert not is_slang_term("asdfgh", ud)  # wordfreq never saw it
+    assert is_slang_term("low key", ud)  # "lowkey" is also in UD
+    assert not is_slang_term("first time", ud)  # just two common words
+    assert not is_slang_term("a b c", ud)
 
 
 def test_build_slang_lexicon_blocks_flagged_terms():

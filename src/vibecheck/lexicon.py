@@ -40,12 +40,18 @@ GAP_QUERIES = {
 MIN_UPVOTES = 100
 MIN_UPVOTE_RATIO = 0.7
 MAX_ZIPF = 3.0  # single words must be rare in everyday English
-MIN_PHRASE_UPVOTES = 1000  # Zipf doesn't work for phrases, so ask for more votes
 TERM_RE = re.compile(r"[a-z]+(?:['-][a-z]+)*(?: [a-z]+(?:['-][a-z]+)*)?")  # one or two words
-# Drop terms whose definitions look offensive or describe a name. Crude: add words as junk shows up.
+# Crude offensive/junk screens. Add words as junk shows up.
+# Definitions: drop the term if any good definition mentions these.
 BLOCK_MARKERS = re.compile(
-    r"\b(?:sex\w*|penis|vagina|genital\w*|porn\w*|masturbat\w*|slur|racist|derogatory|"
-    r"offensive|nazi|rape\w*|name|named)\b",
+    r"\b(?:sex\w*|penis|vagina|genital\w*|porn\w*|masturbat\w*|slur\w*|racis\w*|racial|ethnic|"
+    r"derogatory|insult\w*|offensive|nazi|rape\w*|name|named)\b",
+    re.IGNORECASE,
+)
+# Terms: drop if the term itself contains these.
+PROFANITY = re.compile(
+    r"fuck|shit|bitch|cunt|dick|cock|puss|anal|anus|nigg|fag|whore|slut|tits|boob|homo|retard|rape|sex|porn|"
+    r"penis|vagina|jizz|nazi|ching|chong",
     re.IGNORECASE,
 )
 
@@ -83,7 +89,7 @@ def load_ud_definitions(path: Path = UD_CSV, chunksize: int = 200_000) -> pd.Dat
         usecols=["word", "up_votes", "down_votes", "definition"],
         chunksize=chunksize,
         on_bad_lines="skip",
-        dtype={"word": str, "definition": str},
+        dtype=str,
     ):
         chunk = chunk.dropna()
         up = pd.to_numeric(chunk["up_votes"], errors="coerce").fillna(0)
@@ -93,12 +99,12 @@ def load_ud_definitions(path: Path = UD_CSV, chunksize: int = 200_000) -> pd.Dat
     return pd.concat(keep, ignore_index=True)[["word", "up_votes", "ratio", "definition"]]
 
 
-def is_slang_term(term: str, up_votes: float) -> bool:
-    """One or two words, and rare (single words) or heavily voted (phrases)."""
-    if len(term) < 3 or not TERM_RE.fullmatch(term):
+def is_slang_term(term: str, ud_terms: set[str]) -> bool:
+    """Rare single words, or phrases UD also has as one word ("low key" -> "lowkey")."""
+    if len(term) < 3 or not TERM_RE.fullmatch(term) or PROFANITY.search(term):
         return False
     if " " in term:
-        return up_votes >= MIN_PHRASE_UPVOTES
+        return term.replace(" ", "") in ud_terms  # Zipf can't judge phrases
     return 0 < zipf_frequency(term, "en") < MAX_ZIPF  # 0 means wordfreq never saw it: likely junk
 
 
@@ -108,7 +114,8 @@ def build_slang_lexicon(definitions: pd.DataFrame) -> pd.DataFrame:
     blocked = set(defs.loc[defs["definition"].str.contains(BLOCK_MARKERS), "term"])
     best = defs.sort_values("up_votes", ascending=False).drop_duplicates("term")
     best = best[~best["term"].isin(blocked)]
-    best = best[[is_slang_term(t, up) for t, up in zip(best["term"], best["up_votes"], strict=True)]]
+    ud_terms = set(best["term"])
+    best = best[[is_slang_term(t, ud_terms) for t in best["term"]]]
     best = best.assign(zipf=best["term"].map(lambda t: zipf_frequency(t, "en")))
     return best[["term", "up_votes", "ratio", "zipf", "definition"]].reset_index(drop=True)
 
