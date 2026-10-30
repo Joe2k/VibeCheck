@@ -1,15 +1,15 @@
-"""Shared chart style so every notebook figure looks the same on the slides."""
+"""Chart style shared by the notebooks."""
 
 import matplotlib.pyplot as plt
 
-# Validated categorical palette (colorblind-safe for these 3 adjacent hues). Fixed order, never cycled.
+# Colorblind-safe for these three. Keep the order fixed.
 GROUP_COLORS = {"cafe": "#2a78d6", "restaurant": "#eb6834", "bar": "#1baf7a"}
 SINGLE_COLOR = "#2a78d6"
 TEXT, MUTED, SURFACE = "#0b0b0b", "#52514e", "#fcfcfb"
 
 
 def use_style() -> None:
-    """Thin marks, recessive axes and grid, text in ink colors (never series colors)."""
+    """Light grid, no top/right spines, muted axis text."""
     plt.rcParams.update(
         {
             "figure.facecolor": SURFACE,

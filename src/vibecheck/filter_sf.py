@@ -1,11 +1,9 @@
-"""Filter the Google Local California dump down to San Francisco cafes, restaurants and bars.
+"""Filter Google Local California down to SF cafes, restaurants and bars.
 
-Usage:
     uv run python -m vibecheck.filter_sf            # places, then reviews
-    uv run python -m vibecheck.filter_sf places     # places only (fast; use when tuning keywords)
+    uv run python -m vibecheck.filter_sf places     # places only (fast)
 
-The metadata file (118 MB) is downloaded to data/raw. The reviews file (5.35 GB) is
-streamed straight from the URL and never stored, unless you put a copy in data/raw yourself.
+Metadata is downloaded to data/raw. Reviews (5.35 GB) are streamed from the URL.
 """
 
 import gzip
@@ -38,8 +36,7 @@ SF_LON = (-122.52, -122.35)
 MAX_REVIEWS_PER_PLACE = 50
 ATMOSPHERE_ALIASES = {"Cosy": "Cozy", "Upmarket": "Upscale"}
 
-# --- Tune these. Matched as whole words against each lowercased Google category. ---
-# A place's group comes from its first matching category, checked in this order.
+# Whole-word match on Google categories. The first matching group wins.
 CATEGORY_KEYWORDS = {
     "cafe": ["cafe", "café", "coffee", "espresso", "tea house", "bubble tea", "bakery"],
     "restaurant": ["restaurant", "bistro", "diner", "eatery", "steakhouse", "steak house"],
@@ -57,7 +54,7 @@ CATEGORY_KEYWORDS = {
         "beer hall",
     ],
 }
-# Categories containing these words are ignored ("Restaurant supply store", "Coffee machine supplier").
+# Skip categories like "Restaurant supply store".
 EXCLUDE_KEYWORDS = ["supply", "supplier", "wholesaler", "equipment", "repair", "manufacturer", "distributor"]
 
 
@@ -93,12 +90,8 @@ def download(url: str, path: Path) -> Path:
 
 
 def iter_json_lines(source: str | Path) -> Iterator[dict]:
-    """Stream records from a gzipped JSON-lines file, given a local path or an http(s) URL.
-
-    Reads one line at a time, so memory stays flat no matter how big the file is.
-    The progress bar counts compressed bytes read.
-    """
-    # ponytail: a dropped connection restarts the stream from zero; download the file if that bites.
+    """Yield records from a gzipped JSON-lines file (path or URL), one line at a time."""
+    # If the connection drops, the stream starts over. Download the file if that keeps happening.
     if str(source).startswith("http"):
         raw = urllib.request.urlopen(str(source), timeout=60)
         total = int(raw.headers["Content-Length"])
@@ -119,12 +112,9 @@ def iter_json_lines(source: str | Path) -> Iterator[dict]:
 
 
 def is_in_sf(place: dict) -> bool:
-    """True if the place is inside the SF box and its address says SF or names no other city.
+    """Inside the SF box, and the address says SF or no other city (drops Daly City).
 
-    The box is the main rule: an address match alone lets in "South San Francisco, CA" and SFO
-    airport ("San Francisco, CA 94128"), both south of the city. The address check stops the box
-    from pulling in the edge of Daly City, while keeping SF addresses written in other formats.
-    Places without coordinates fall back to the address.
+    Address alone isn't enough: it matches South San Francisco and SFO.
     """
     address = place.get("address") or ""
     says_sf = SF_ADDRESS_PATTERN.search(address) is not None
@@ -170,7 +160,7 @@ def select_places(records: Iterable[dict]) -> pd.DataFrame:
                 "avg_rating": place.get("avg_rating"),
                 "num_of_reviews": place.get("num_of_reviews"),
                 "price": place.get("price"),
-                # Stored as a JSON string: its keys differ from place to place.
+                # JSON string, since keys differ per place
                 "MISC": orjson.dumps(place["MISC"]).decode() if place.get("MISC") else None,
             }
         )
@@ -182,11 +172,7 @@ def select_places(records: Iterable[dict]) -> pd.DataFrame:
 
 
 def clean_text(text: str | None) -> str | None:
-    """Strip whitespace and keep only the English part of Google-translated reviews.
-
-    Translated reviews look like "(Translated by Google) <english>\\n\\n(Original)\\n<original>".
-    Returns None for empty text.
-    """
+    """Strip text and keep the English part of "(Translated by Google) ... (Original) ..." reviews."""
     if not text:
         return None
     if text.startswith("(Translated by Google)"):
@@ -196,7 +182,7 @@ def clean_text(text: str | None) -> str | None:
 
 def select_reviews(records: Iterable[dict], gmap_ids: set[str], k: int = MAX_REVIEWS_PER_PLACE) -> pd.DataFrame:
     """Keep the `k` most recent non-empty reviews for each place in `gmap_ids`."""
-    heaps: dict[str, list] = {}  # gmap_id -> min-heap of (time, counter, review), oldest on top
+    heaps: dict[str, list] = {}  # gmap_id -> min-heap, oldest review on top
     for counter, review in enumerate(records):
         if review["gmap_id"] not in gmap_ids:
             continue
@@ -225,10 +211,7 @@ def select_reviews(records: Iterable[dict], gmap_ids: set[str], k: int = MAX_REV
 
 
 def load_places() -> pd.DataFrame:
-    """Read sf_places.parquet and parse MISC into a dict column `misc` ({} when missing).
-
-    Google spells some Atmosphere tags two ways; those are merged so "Cosy" places count as "Cozy".
-    """
+    """Read sf_places.parquet with MISC parsed into a `misc` dict. Merges tag spellings like Cosy/Cozy."""
     places = pd.read_parquet(PLACES_OUT)
     places["misc"] = [orjson.loads(s) if isinstance(s, str) else {} for s in places["MISC"]]
     for misc in places["misc"]:

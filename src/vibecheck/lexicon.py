@@ -1,9 +1,4 @@
-"""Word lists and matching helpers for the "vibe" and slang stats.
-
-- VIBE_WORDS: plain words reviewers use for atmosphere (is the vibe in the reviews?).
-- GAP_QUERIES: slang a user might search with, next to how reviewers usually say it.
-- build_slang_lexicon(): slang terms from the Urban Dictionary dump.
-"""
+"""Word lists for the vibe and slang stats, plus the Urban Dictionary slang lexicon."""
 
 import re
 from collections.abc import Iterable
@@ -16,15 +11,15 @@ from vibecheck.filter_sf import RAW_DIR
 
 UD_CSV = RAW_DIR / "urbandict-word-defs.csv"
 
+# Plain words reviewers use for atmosphere.
 VIBE_WORDS = [
     "atmosphere", "ambiance", "ambience", "vibe", "vibes", "decor", "cozy", "cosy", "intimate",
     "romantic", "quiet", "loud", "noisy", "lively", "crowded", "packed", "spacious", "cramped",
     "music", "lighting", "dim", "chill", "relaxed", "laid-back", "casual", "trendy", "upscale",
 ]  # fmt: skip
 
-# Query slang -> (slang forms to search for, plain words reviewers use for the same idea).
-# Chosen from our example queries BEFORE looking at the counts, and every row is reported,
-# so the table isn't cherry-picked. Ambiguous words were left out on purpose:
+# query -> (slang forms, plain words with the same meaning).
+# Picked before counting, all rows reported. Left out as ambiguous:
 # "lit" (dimly lit), "fire" (wood-fired), "grind" (coffee grind), "mid" (mid-week).
 GAP_QUERIES = {
     "boujee": (["boujee", "bougie", "bourgie"], ["fancy", "upscale", "classy", "elegant", "luxurious"]),
@@ -41,14 +36,13 @@ GAP_QUERIES = {
     "turnt": (["turnt"], ["rowdy", "wild", "rambunctious"]),  # not "party" (party of 6)
 }
 
-# Urban Dictionary filters. A term qualifies if it has at least one well-voted definition.
+# Urban Dictionary filters. A term needs at least one well-voted definition.
 MIN_UPVOTES = 100
 MIN_UPVOTE_RATIO = 0.7
-MAX_ZIPF = 3.0  # single words must be rare in normal English (wordfreq Zipf scale)
-MIN_PHRASE_UPVOTES = 1000  # two-word phrases need more votes; Zipf can't judge phrases
+MAX_ZIPF = 3.0  # single words must be rare in everyday English
+MIN_PHRASE_UPVOTES = 1000  # Zipf doesn't work for phrases, so ask for more votes
 TERM_RE = re.compile(r"[a-z]+(?:['-][a-z]+)*(?: [a-z]+(?:['-][a-z]+)*)?")  # one or two words
-# A definition mentioning any of these marks the term as offensive or as a person's name.
-# ponytail: keyword screen, not a classifier; extend BLOCK_MARKERS as junk shows up.
+# Drop terms whose definitions look offensive or describe a name. Crude: add words as junk shows up.
 BLOCK_MARKERS = re.compile(
     r"\b(?:sex\w*|penis|vagina|genital\w*|porn\w*|masturbat\w*|slur|racist|derogatory|"
     r"offensive|nazi|rape\w*|name|named)\b",
@@ -57,13 +51,13 @@ BLOCK_MARKERS = re.compile(
 
 
 def term_pattern(terms: Iterable[str]) -> re.Pattern:
-    """Regex matching any term as a whole word, case-insensitive. Works for "poppin'" and "low-key"."""
+    """Case-insensitive whole-word regex for any of `terms` (handles "poppin'" and "low-key")."""
     alternatives = "|".join(re.escape(t) for t in sorted(terms, key=len, reverse=True))
     return re.compile(rf"(?<!\w)(?:{alternatives})(?!\w)", re.IGNORECASE)
 
 
 def gap_table(reviews: pd.DataFrame, queries: dict = GAP_QUERIES) -> pd.DataFrame:
-    """For each slang query word, count reviews and places that mention it vs. its plain meaning."""
+    """Reviews and places mentioning each slang word vs. its plain meaning."""
     rows = []
     for query, (slang, plain) in queries.items():
         has_slang = reviews["text"].str.contains(term_pattern(slang))
@@ -82,7 +76,7 @@ def gap_table(reviews: pd.DataFrame, queries: dict = GAP_QUERIES) -> pd.DataFram
 
 
 def load_ud_definitions(path: Path = UD_CSV, chunksize: int = 200_000) -> pd.DataFrame:
-    """Read the Urban Dictionary CSV in chunks and keep only well-voted definitions."""
+    """Read the Urban Dictionary CSV in chunks, keeping well-voted definitions."""
     keep = []
     for chunk in pd.read_csv(
         path,
@@ -100,7 +94,7 @@ def load_ud_definitions(path: Path = UD_CSV, chunksize: int = 200_000) -> pd.Dat
 
 
 def is_slang_term(term: str, up_votes: float) -> bool:
-    """Apply the shape and rarity rules to one normalized term."""
+    """One or two words, and rare (single words) or heavily voted (phrases)."""
     if len(term) < 3 or not TERM_RE.fullmatch(term):
         return False
     if " " in term:
@@ -120,7 +114,7 @@ def build_slang_lexicon(definitions: pd.DataFrame) -> pd.DataFrame:
 
 
 def find_terms(text: str, lexicon: set[str]) -> list[str]:
-    """Return lexicon terms (single words and two-word phrases) found in `text`."""
+    """Lexicon words and two-word phrases found in `text`."""
     words = re.findall(r"[a-z]+(?:['-][a-z]+)*", text.lower())
     bigrams = [f"{a} {b}" for a, b in zip(words, words[1:], strict=False)]
     return [t for t in words + bigrams if t in lexicon]

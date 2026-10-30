@@ -1,79 +1,75 @@
 # VibeCheck
 
-A slang-aware search engine for San Francisco cafes, restaurants and bars.
-You search the way you talk ("a lowkey aesthetic cafe to grind on some work"), and
-VibeCheck matches you against what people actually wrote in Google Maps reviews.
+Search SF cafes, restaurants and bars the way you talk:
+*"a lowkey aesthetic cafe to grind on some work"*. Results come from Google Maps reviews.
 
-Class project for CS 667 (NLP). This repo currently holds the **data + features** stage:
-the San Francisco subset, the stats for our slides, a slang check, and a feature prototype.
-The search engine itself comes next.
+CS 667 (NLP) class project. This repo is the data + features stage. Search comes next.
 
-## Why this needs NLP
+## The problem
 
-Reviewers describe the vibe, but not in the words people search with. Someone types
-"boujee", and reviews say "fancy", "upscale" or "classy". Keyword search misses that.
-`reports/numbers.md` has the gap table that measures it.
+Users search with slang. Reviewers mostly don't. In our SF data, 32 places have a review
+saying "boujee" and 1,154 say "fancy", "upscale" or "classy". Keyword search misses most of them.
+Full numbers: [reports/numbers.md](reports/numbers.md).
 
 ## Setup
 
-You need [uv](https://docs.astral.sh/uv/) (`brew install uv`) and about 4 GB of free disk
-for the environment and models.
+Needs [uv](https://docs.astral.sh/uv/) and ~4 GB of free disk.
 
 ```bash
-make setup      # creates .venv with Python 3.11 and every dependency, including spaCy's en_core_web_sm
-make test       # quick unit tests
+make setup   # .venv with Python 3.11 + all deps
+make test
 ```
 
-Not using uv? `python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt -e .`
-(`requirements.txt` is generated from `uv.lock` with `uv export --no-hashes --no-dev --no-emit-project -o requirements.txt`.)
+No uv: `python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt -e .`
 
-For the slang notebook you also need a free Kaggle API token:
-
-1. Sign in at kaggle.com, open **Settings -> API -> Create New Token**. This downloads `kaggle.json`.
-2. `mkdir -p ~/.kaggle && mv ~/Downloads/kaggle.json ~/.kaggle/ && chmod 600 ~/.kaggle/kaggle.json`
-
-## Running it
+Kaggle token (for the slang notebook): Kaggle → Settings → API → Create New Token, then
 
 ```bash
-make data       # SF places + reviews (streams the 5.35 GB reviews file, 30-45 min), Urban Dictionary dump
-make stats      # runs notebooks 00-02 and writes reports/numbers.md
-make features   # runs notebook 03 (downloads ~1 GB of models the first time)
+mkdir -p ~/.kaggle && mv ~/Downloads/kaggle.json ~/.kaggle/ && chmod 600 ~/.kaggle/kaggle.json
 ```
 
-Or open the notebooks with `uv run jupyter lab` and run them cell by cell.
+## Run
 
-| Notebook | What it shows |
+```bash
+make data       # SF places + reviews (~20 min) and Urban Dictionary
+make stats      # notebooks 00-02, writes reports/numbers.md
+make features   # notebook 03 (~1 GB of models on first run)
+```
+
+Or `uv run jupyter lab` and step through the notebooks.
+
+| Notebook | Shows |
 |---|---|
-| `00_build_data` | Raw records, the SF + category filters, a map of the places, the review filter |
-| `01_sf_stats` | Places, reviews, category breakdown, Google's MISC tags (e.g. Atmosphere), how often reviews talk about the vibe |
-| `02_slang` | Urban Dictionary slang lexicon and the slang-vs-plain-words gap table |
-| `03_features` | spaCy lemmas, mpnet embeddings, KeyBERT vibe phrases and sentiment on 3 example places |
+| 00_build_data | raw records, filters, map of places |
+| 01_sf_stats | counts, categories, Google's Atmosphere tags, vibe words in reviews |
+| 02_slang | slang vs. plain words gap table, Urban Dictionary lexicon |
+| 03_features | lemmas, embeddings, KeyBERT phrases, sentiment on 3 places |
 
 ## Data
 
-- **Google Local (2021)**, UCSD McAuley Lab: https://mcauleylab.ucsd.edu/public_datasets/gdrive/googlelocal/
-  We use `meta-California.json.gz` (downloaded, 118 MB) and `review-California.json.gz`
-  (streamed from the URL, never stored). Please cite UCTopic (Li et al., ACL 2022) and
-  Personalized Showcases (Yan et al., SIGIR 2023).
-- **Urban Dictionary words** (Kaggle `therohk/urban-dictionary-words-dataset`, CC0, votes as of 2016).
+- [Google Local 2021](https://mcauleylab.ucsd.edu/public_datasets/gdrive/googlelocal/) (UCSD McAuley Lab).
+  California metadata is downloaded. The 5.35 GB reviews file is streamed, never saved.
+  Cite UCTopic (ACL 2022) and Personalized Showcases (SIGIR 2023).
+- Urban Dictionary words, Kaggle `therohk/urban-dictionary-words-dataset` (CC0, votes up to 2016).
 
-Filtering rules (all tunable at the top of `src/vibecheck/filter_sf.py`):
+Filters (constants at the top of `src/vibecheck/filter_sf.py`):
 
-- **San Francisco**: coordinates inside lat 37.70-37.83 / lon -122.52 to -122.35, and the address
-  says "San Francisco, CA" or names no other city (drops the Daly City edge of the box). An address
-  match alone isn't enough: it lets in South San Francisco and SFO airport.
-- **Cafes, restaurants, bars**: whole-word keyword match on Google's categories.
-- **Reviews**: non-empty text, at most the 50 most recent per place. For Google-translated
-  reviews, only the English part is kept.
+- **SF**: inside lat 37.70–37.83, lon -122.52 to -122.35, and the address isn't another city.
+  Address alone isn't enough: "South San Francisco" and SFO both match it.
+- **Type**: whole-word match on Google categories (cafe, coffee, restaurant, bar, pub, lounge...).
+- **Reviews**: non-empty, 50 most recent per place, English part of Google-translated ones.
 
-`data/` is gitignored. Never commit data, model files or `kaggle.json`.
+Data and model files stay out of git.
 
 ## Layout
 
 ```
-src/vibecheck/   filter_sf.py (data pipeline), lexicon.py (word lists, slang), plots.py, report.py
-notebooks/       00-03, run in order
-reports/         numbers.md (generated)
-tests/           pytest unit tests
-data/raw, data/processed   (gitignored)
+src/vibecheck/
+  filter_sf.py   data pipeline
+  lexicon.py     word lists, slang lexicon, gap table
+  plots.py       chart style
+  report.py      writes reports/numbers.md
+notebooks/       00-03
+reports/         numbers.md + charts
+tests/
 ```
