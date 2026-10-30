@@ -8,9 +8,11 @@ Metadata is downloaded to data/raw. Reviews (5.35 GB) are streamed from the URL.
 
 import gzip
 import heapq
+import http.client
 import re
 import shutil
 import sys
+import urllib.error
 import urllib.request
 from collections.abc import Iterable, Iterator
 from pathlib import Path
@@ -72,19 +74,42 @@ SF_ADDRESS_PATTERN = re.compile(r"(?:^|, )San Francisco, CA")  # not "South San 
 # --- I/O ---
 
 
-def download(url: str, path: Path) -> Path:
-    """Download `url` to `path` with a progress bar. Skips the download if the file exists."""
+def download(url: str, path: Path, retries: int = 10) -> Path:
+    """Download `url` to `path` with a progress bar. Skips the download if the file exists.
+
+    Resumes from the partial file when the connection stalls or drops (kaikki.org does this).
+    """
     if path.exists():
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
     partial = path.with_suffix(path.suffix + ".part")
-    with urllib.request.urlopen(url, timeout=60) as resp:
-        total = int(resp.headers["Content-Length"])
-        with (
-            tqdm.wrapattr(resp, "read", total=total, desc=path.name, unit="B", unit_scale=True) as src,
-            open(partial, "wb") as dst,
-        ):
-            shutil.copyfileobj(src, dst)
+    for attempt in range(retries + 1):
+        done = partial.stat().st_size if partial.exists() else 0
+        request = urllib.request.Request(url, headers={"Range": f"bytes={done}-"} if done else {})
+        try:
+            with urllib.request.urlopen(request, timeout=60) as resp:
+                if resp.status != 206:  # server sent the whole file, so start over
+                    done = 0
+                total = done + int(resp.headers["Content-Length"])
+                with (
+                    tqdm.wrapattr(
+                        resp, "read", total=total, initial=done, desc=path.name, unit="B", unit_scale=True
+                    ) as src,
+                    open(partial, "ab" if done else "wb") as dst,
+                ):
+                    shutil.copyfileobj(src, dst)
+            if partial.stat().st_size >= total:
+                break
+            error = "connection closed early"  # read() doesn't raise for this, so check the size
+        except urllib.error.HTTPError as err:
+            if err.code == 416:  # nothing left to fetch: the partial file is complete
+                break
+            raise
+        except (OSError, http.client.IncompleteRead) as err:  # timeouts and dropped connections
+            error = err
+        if attempt == retries:
+            raise ConnectionError(f"{path.name}: gave up after {retries} retries ({error})")
+        print(f"{path.name}: {error}. Resuming ({attempt + 1}/{retries})...")
     partial.rename(path)  # only a finished download gets the real name
     return path
 
@@ -243,6 +268,9 @@ def build_reviews() -> pd.DataFrame:
 
 if __name__ == "__main__":
     step = sys.argv[1] if len(sys.argv) > 1 else "all"
+    if step == "all" and REVIEWS_OUT.exists():  # the reviews step takes 30-45 min; don't redo it by accident
+        print(f"{REVIEWS_OUT.relative_to(ROOT)} already exists. Delete it, or run a single step, to rebuild.")
+        sys.exit()
     if step in ("places", "all"):
         build_places()
     if step in ("reviews", "all"):
