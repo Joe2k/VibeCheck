@@ -1,6 +1,6 @@
 import pandas as pd
 
-from vibecheck.lexicon import build_slang_lexicon, find_terms, gap_table, is_slang_term, term_pattern
+from vibecheck.lexicon import best_definitions, gap_table, term_pattern
 
 
 def test_term_pattern_whole_words():
@@ -23,29 +23,14 @@ def test_gap_table_counts_reviews_and_places():
     assert (row["places (slang)"], row["places (plain)"]) == (1, 2)
 
 
-def test_is_slang_term():
-    ud = {"boujee", "lowkey", "low key", "first time"}
-    assert is_slang_term("boujee", ud)
-    assert not is_slang_term("coffee", ud)  # common English
-    assert not is_slang_term("asdfgh", ud)  # wordfreq never saw it
-    assert is_slang_term("low key", ud)  # "lowkey" is also in UD
-    assert not is_slang_term("first time", ud)  # just two common words
-    assert not is_slang_term("a b c", ud)
-
-
-def test_build_slang_lexicon_blocks_flagged_terms():
+def test_best_definitions_picks_top_voted_and_marks_missing():
     defs = pd.DataFrame(
         {
-            "word": ["Boujee", "boujee", "jaxon"],
-            "up_votes": [900, 300, 800],
-            "ratio": [0.9, 0.8, 0.9],
-            "definition": ["fancy, high-class", "rich", "a name for the best guy"],
+            "word": ["Lowkey", "lowkey"],
+            "up_votes": [300, 900],
+            "definition": ["quietly", "to keep;;things secret"],
         }
     )
-    lexicon = build_slang_lexicon(defs)
-    assert lexicon["term"].tolist() == ["boujee"]
-    assert lexicon.loc[0, "definition"] == "fancy, high-class"  # best-voted definition wins
-
-
-def test_find_terms_unigrams_and_bigrams():
-    assert find_terms("Lowkey the best, low key vibes", {"lowkey", "low key"}) == ["lowkey", "low key"]
+    best = best_definitions(defs, ["lowkey", "boujee"])
+    assert best["lowkey"] == "to keep things secret"
+    assert pd.isna(best["boujee"])

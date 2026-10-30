@@ -31,9 +31,9 @@ mkdir -p ~/.kaggle && mv ~/Downloads/kaggle.json ~/.kaggle/ && chmod 600 ~/.kagg
 ## Run
 
 ```bash
-make data       # SF places + reviews (~20 min) and Urban Dictionary
-make stats      # notebooks 00-02, writes reports/numbers.md
-make features   # notebook 03 (~1 GB of models on first run)
+make data       # SF places + reviews, Urban Dictionary, Wiktionary slang (~1 h, mostly streaming)
+make stats      # notebooks 00-03, writes reports/numbers.md
+make features   # notebook 04 (~1 GB of models on first run)
 ```
 
 Or `uv run jupyter lab` and step through the notebooks.
@@ -42,8 +42,9 @@ Or `uv run jupyter lab` and step through the notebooks.
 |---|---|
 | 00_build_data | raw records, filters, map of places |
 | 01_sf_stats | counts, categories, Google's Atmosphere tags, vibe words in reviews |
-| 02_slang | slang vs. plain words gap table, Urban Dictionary lexicon |
-| 03_features | lemmas, embeddings, KeyBERT phrases, sentiment on 3 places |
+| 02_slang | slang vs. plain words gap table; Urban Dictionary vs. Wiktionary |
+| 03_tag_queries | plain vs. slang test queries scored against Google's tags |
+| 04_features | lemmas, embeddings, KeyBERT phrases, sentiment on 3 places |
 
 ## Data
 
@@ -51,6 +52,7 @@ Or `uv run jupyter lab` and step through the notebooks.
   California metadata is downloaded. The 5.35 GB reviews file is streamed, never saved.
   Cite UCTopic (ACL 2022) and Personalized Showcases (SIGIR 2023).
 - Urban Dictionary words, Kaggle `therohk/urban-dictionary-words-dataset` (CC0, votes up to 2016).
+- English Wiktionary via [kaikki.org](https://kaikki.org/dictionary/) (2026 extract). Only slang/informal senses are kept.
 
 Filters (constants at the top of `src/vibecheck/filter_sf.py`):
 
@@ -66,10 +68,12 @@ Data and model files stay out of git.
 ```
 src/vibecheck/
   filter_sf.py   data pipeline
-  lexicon.py     word lists, slang lexicon, gap table
+  lexicon.py     word lists, gap table, Urban Dictionary lookups
+  wiktionary.py  Wiktionary slang senses
+  evaluate.py    tag-based test queries and scoring
   plots.py       chart style
   report.py      writes reports/numbers.md
-notebooks/       00-03
+notebooks/       00-04
 reports/         numbers.md + charts
 tests/
 ```

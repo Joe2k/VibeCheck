@@ -1,11 +1,10 @@
-"""Word lists for the vibe and slang stats, plus the Urban Dictionary slang lexicon."""
+"""Word lists for the vibe and slang stats, and Urban Dictionary lookups."""
 
 import re
 from collections.abc import Iterable
 from pathlib import Path
 
 import pandas as pd
-from wordfreq import zipf_frequency
 
 from vibecheck.filter_sf import RAW_DIR
 
@@ -39,21 +38,6 @@ GAP_QUERIES = {
 # Urban Dictionary filters. A term needs at least one well-voted definition.
 MIN_UPVOTES = 100
 MIN_UPVOTE_RATIO = 0.7
-MAX_ZIPF = 3.0  # single words must be rare in everyday English
-TERM_RE = re.compile(r"[a-z]+(?:['-][a-z]+)*(?: [a-z]+(?:['-][a-z]+)*)?")  # one or two words
-# Crude offensive/junk screens. Add words as junk shows up.
-# Definitions: drop the term if any good definition mentions these.
-BLOCK_MARKERS = re.compile(
-    r"\b(?:sex\w*|penis|vagina|genital\w*|porn\w*|masturbat\w*|slur\w*|racis\w*|racial|ethnic|"
-    r"derogatory|insult\w*|offensive|nazi|rape\w*|name|named)\b",
-    re.IGNORECASE,
-)
-# Terms: drop if the term itself contains these.
-PROFANITY = re.compile(
-    r"fuck|shit|bitch|cunt|dick|cock|puss|anal|anus|nigg|fag|whore|slut|tits|boob|homo|retard|rape|sex|porn|"
-    r"penis|vagina|jizz|nazi|ching|chong",
-    re.IGNORECASE,
-)
 
 
 def term_pattern(terms: Iterable[str]) -> re.Pattern:
@@ -99,29 +83,8 @@ def load_ud_definitions(path: Path = UD_CSV, chunksize: int = 200_000) -> pd.Dat
     return pd.concat(keep, ignore_index=True)[["word", "up_votes", "ratio", "definition"]]
 
 
-def is_slang_term(term: str, ud_terms: set[str]) -> bool:
-    """Rare single words, or phrases UD also has as one word ("low key" -> "lowkey")."""
-    if len(term) < 3 or not TERM_RE.fullmatch(term) or PROFANITY.search(term):
-        return False
-    if " " in term:
-        return term.replace(" ", "") in ud_terms  # Zipf can't judge phrases
-    return 0 < zipf_frequency(term, "en") < MAX_ZIPF  # 0 means wordfreq never saw it: likely junk
-
-
-def build_slang_lexicon(definitions: pd.DataFrame) -> pd.DataFrame:
-    """One row per slang term: its best definition, votes and Zipf frequency."""
+def best_definitions(definitions: pd.DataFrame, terms: Iterable[str]) -> pd.Series:
+    """Top-voted Urban Dictionary definition for each term (NaN if UD doesn't have it)."""
     defs = definitions.assign(term=definitions["word"].str.lower().str.strip())
-    blocked = set(defs.loc[defs["definition"].str.contains(BLOCK_MARKERS), "term"])
-    best = defs.sort_values("up_votes", ascending=False).drop_duplicates("term")
-    best = best[~best["term"].isin(blocked)]
-    ud_terms = set(best["term"])
-    best = best[[is_slang_term(t, ud_terms) for t in best["term"]]]
-    best = best.assign(zipf=best["term"].map(lambda t: zipf_frequency(t, "en")))
-    return best[["term", "up_votes", "ratio", "zipf", "definition"]].reset_index(drop=True)
-
-
-def find_terms(text: str, lexicon: set[str]) -> list[str]:
-    """Lexicon words and two-word phrases found in `text`."""
-    words = re.findall(r"[a-z]+(?:['-][a-z]+)*", text.lower())
-    bigrams = [f"{a} {b}" for a, b in zip(words, words[1:], strict=False)]
-    return [t for t in words + bigrams if t in lexicon]
+    best = defs.sort_values("up_votes", ascending=False).drop_duplicates("term").set_index("term")
+    return best["definition"].str.replace(";;", " ").reindex(list(terms))
